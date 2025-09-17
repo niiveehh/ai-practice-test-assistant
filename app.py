@@ -10,8 +10,8 @@ S3_BUCKET = "pt-dataset-bucket-567"
 S3_KEY = "pt-questions.json"
 API_URL = "https://icwkdnl7sb.execute-api.us-east-1.amazonaws.com/ask"
 TOTAL_TIME = 1800  # 30 minutes
-NUM_QUESTIONS = 10
-MARKS_PER_QUESTION = 10
+NUM_QUESTIONS = 10  # Reduced to 10 for random selection
+MARKS_PER_QUESTION = 10  # Adjusted for 10 questions
 MAX_MARKS = NUM_QUESTIONS * MARKS_PER_QUESTION  # 100
 PASS_MARKS = 70
 
@@ -24,15 +24,12 @@ st.markdown("""
 .stApp { 
 background: linear-gradient(135deg, #ff6600 0%, #ff2e2e 50%, #ffffff 100%); 
 font-family: 'Arial', sans-serif; 
-color: white;
 }
 .title { 
 font-size: 2.5rem; 
 font-weight: bold; 
 text-align: center; 
-background: linear-gradient(90deg, #ff6600, #ff2e2e); 
--webkit-background-clip: text; 
--webkit-text-fill-color: transparent; 
+color: black; 
 margin-top: 10px;
 }
 .subtitle { 
@@ -100,7 +97,7 @@ f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Load questions from S3 and pick random 20
+# Load questions from S3 and pick random 10
 @st.cache_data
 def load_questions():
     s3 = boto3.client("s3")
@@ -168,7 +165,7 @@ def check_answer():
     else:
         st.session_state.feedback = "Wrong! ❌ Almost there!"
 
-# Home page with instructions
+# Home page with instructions and immediate quiz start
 if st.session_state.page == "home":
     st.markdown('<div class="title">Practice Test Assistant 🎉</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Exam Instructions 🚀</div>', unsafe_allow_html=True)
@@ -190,13 +187,9 @@ if st.session_state.page == "home":
         st.session_state.quiz_started = True
         st.session_state.start_time = time.time()
 
-# Quiz page
+# Quiz page with all questions displayed
 if st.session_state.page == "quiz":
     update_timer()
-    q_idx = st.session_state.current_question
-    q = st.session_state.questions[q_idx]
-    st.markdown(f'<div class="question-box"><b>Question {q_idx + 1}:</b> {q["question_text"]}</div>', unsafe_allow_html=True)
-
     st.sidebar.markdown(f'<div class="timer">Time Remaining ⏰: {st.session_state.time_remaining // 60}:{st.session_state.time_remaining % 60:02d}</div>', unsafe_allow_html=True)
     if st.sidebar.button("Pause Quiz ⬅️"):
         pause_quiz()
@@ -204,40 +197,35 @@ if st.session_state.page == "quiz":
         if st.sidebar.button("Continue 🚀"):
             resume_quiz()
 
-    selected = st.radio("Select Answer:", list(q["options"].values()), key=f"q{q_idx}")
-    opt_key = [k for k, v in q["options"].items() if v == selected][0]
-    st.session_state.answers[q_idx] = opt_key
+    for q_idx, q in enumerate(st.session_state.questions):
+        st.markdown(f'<div class="question-box"><b>Question {q_idx + 1}:</b> {q["question_text"]}</div>', unsafe_allow_html=True)
+        selected = st.radio(f"Select Answer (Q{q_idx + 1}):", list(q["options"].values()), key=f"q{q_idx}")
+        opt_key = [k for k, v in q["options"].items() if v == selected][0]
+        st.session_state.answers[q_idx] = opt_key
+        if st.button(f"Check Answer (Q{q_idx + 1}) ✅", key=f"check{q_idx}"):
+            check_answer()
+        if q_idx in st.session_state.checked_answers:
+            st.markdown(f'<div class="{ "success" if st.session_state.feedback.startswith("Correct") else "error" }">{st.session_state.feedback}</div>', unsafe_allow_html=True)
 
-    if st.button("Check Answer ✅"):
-        check_answer()
-    if q_idx in st.session_state.checked_answers:
-        st.markdown(f'<div class="{ "success" if st.session_state.feedback.startswith("Correct") else "error" }">{st.session_state.feedback}</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="ai-box">', unsafe_allow_html=True)
-    st.subheader("Ask AI about this question 🤖")
-    user_query = st.text_input("E.g., 'Why is option A incorrect?'", key=f"query{q_idx}")
-    if st.button("Ask AI 🚀", key=f"ask{q_idx}"):
-        payload = {"qid": q["qid"], "question": user_query, "user_id": "student1"}
-        headers = {"Content-Type": "application/json"}
-        try:
-            response = requests.post(API_URL, json=payload, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("answer") == "Sorry, I am unable to assist you with this request.":
-                    st.error("AI Response: No specific answer found ❌")
+        st.markdown('<div class="ai-box">', unsafe_allow_html=True)
+        st.subheader("Ask AI about this question 🤖")
+        user_query = st.text_input(f"E.g., 'Why is option A incorrect?' (Q{q_idx + 1})", key=f"query{q_idx}")
+        if st.button(f"Ask AI 🚀 (Q{q_idx + 1})", key=f"ask{q_idx}"):
+            payload = {"qid": q["qid"], "question": user_query, "user_id": "student1"}
+            headers = {"Content-Type": "application/json"}
+            try:
+                response = requests.post(API_URL, json=payload, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("answer") == "Sorry, I am unable to assist you with this request.":
+                        st.error("AI Response: No specific answer found ❌")
+                    else:
+                        st.write(f"AI Answer: {data['answer']} (Source: {data['source']}) 🎯")
                 else:
-                    st.write(f"AI Answer: {data['answer']} (Source: {data['source']}) 🎯")
-            else:
-                st.error(f"Error querying AI: {response.text} ❌")
-        except Exception as e:
-            st.error(f"Error: {str(e)} ❌")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-    if col1.button("Previous ⬅️", disabled=(q_idx == 0)):
-        st.session_state.current_question -= 1
-    if col2.button("Next ➡️", disabled=(q_idx == len(st.session_state.questions) - 1)):
-        st.session_state.current_question += 1
+                    st.error(f"Error querying AI: {response.text} ❌")
+            except Exception as e:
+                st.error(f"Error: {str(e)} ❌")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.button("Submit Quiz 🎯"):
         submit_quiz()
@@ -261,4 +249,3 @@ if st.session_state.page == "quiz":
             st.error("😅 Leave it buddy! You can do it! Come fully prepared tomorrow 💪")
             st.balloons()
         st.markdown('</div>', unsafe_allow_html=True)
-
