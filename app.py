@@ -6,7 +6,7 @@ import requests
 import random
 
 # Constants
-S3_BUCKET = "pt-dataset-bucket-4539"
+S3_BUCKET = "pt-dataset-bucket-567"
 S3_KEY = "pt-questions.json"
 API_URL = "https://icwkdnl7sb.execute-api.us-east-1.amazonaws.com/ask"
 TOTAL_TIME = 1800  # 30 minutes
